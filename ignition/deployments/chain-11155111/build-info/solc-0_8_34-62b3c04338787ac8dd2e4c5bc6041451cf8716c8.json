@@ -1,0 +1,49 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_34-62b3c04338787ac8dd2e4c5bc6041451cf8716c8",
+  "solcVersion": "0.8.34",
+  "solcLongVersion": "0.8.34+commit.80d5c536",
+  "compilerType": "solc",
+  "toolVersions": {
+    "hardhat": "3.22.0"
+  },
+  "userSourceNameMap": {
+    "contracts/FeeVault.sol": "project/contracts/FeeVault.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "osaka",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/FeeVault.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\n/// @title FeeVault\n/// @notice Usuários depositam ETH; o contrato retém uma pequena taxa\n///         (em basis points) e o restante fica disponível para saque.\ncontract FeeVault {\n    /// @dev 10_000 bps = 100%\n    uint256 public constant BPS_DENOMINATOR = 10_000;\n    /// @dev Taxa máxima permitida: 5%\n    uint256 public constant MAX_FEE_BPS = 500;\n\n    address public owner;\n    uint256 public feeBps;\n    uint256 public collectedFees;\n\n    mapping(address => uint256) public balanceOf;\n\n    bool private locked;\n\n    event Deposited(address indexed user, uint256 amount, uint256 fee, uint256 credited);\n    event Withdrawn(address indexed user, uint256 amount);\n    event FeesWithdrawn(address indexed to, uint256 amount);\n    event FeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);\n    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);\n\n    error NotOwner();\n    error ZeroAmount();\n    error ZeroAddress();\n    error FeeTooHigh();\n    error InsufficientBalance();\n    error TransferFailed();\n    error Reentrancy();\n\n    modifier onlyOwner() {\n        if (msg.sender != owner) revert NotOwner();\n        _;\n    }\n\n    modifier nonReentrant() {\n        if (locked) revert Reentrancy();\n        locked = true;\n        _;\n        locked = false;\n    }\n\n    /// @param _feeBps taxa inicial em basis points (ex.: 100 = 1%)\n    constructor(uint256 _feeBps) {\n        if (_feeBps > MAX_FEE_BPS) revert FeeTooHigh();\n        owner = msg.sender;\n        feeBps = _feeBps;\n        emit OwnershipTransferred(address(0), msg.sender);\n    }\n\n    /// @notice Deposita ETH. A taxa fica no contrato e o resto é creditado ao usuário.\n    function deposit() public payable {\n        if (msg.value == 0) revert ZeroAmount();\n\n        uint256 fee = (msg.value * feeBps) / BPS_DENOMINATOR;\n        uint256 credited = msg.value - fee;\n\n        collectedFees += fee;\n        balanceOf[msg.sender] += credited;\n\n        emit Deposited(msg.sender, msg.value, fee, credited);\n    }\n\n    /// @notice Enviar ETH diretamente ao contrato também conta como depósito.\n    receive() external payable {\n        deposit();\n    }\n\n    /// @notice Saca `amount` do saldo do usuário.\n    function withdraw(uint256 amount) external nonReentrant {\n        if (amount == 0) revert ZeroAmount();\n        if (balanceOf[msg.sender] < amount) revert InsufficientBalance();\n\n        balanceOf[msg.sender] -= amount;\n\n        (bool ok, ) = payable(msg.sender).call{value: amount}(\"\");\n        if (!ok) revert TransferFailed();\n\n        emit Withdrawn(msg.sender, amount);\n    }\n\n    /// @notice Dono saca as taxas acumuladas.\n    function withdrawFees(address payable to) external onlyOwner nonReentrant {\n        if (to == address(0)) revert ZeroAddress();\n        uint256 amount = collectedFees;\n        if (amount == 0) revert ZeroAmount();\n\n        collectedFees = 0;\n\n        (bool ok, ) = to.call{value: amount}(\"\");\n        if (!ok) revert TransferFailed();\n\n        emit FeesWithdrawn(to, amount);\n    }\n\n    function setFeeBps(uint256 newFeeBps) external onlyOwner {\n        if (newFeeBps > MAX_FEE_BPS) revert FeeTooHigh();\n        emit FeeUpdated(feeBps, newFeeBps);\n        feeBps = newFeeBps;\n    }\n\n    function transferOwnership(address newOwner) external onlyOwner {\n        if (newOwner == address(0)) revert ZeroAddress();\n        emit OwnershipTransferred(owner, newOwner);\n        owner = newOwner;\n    }\n}\n"
+      }
+    }
+  }
+}
